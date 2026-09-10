@@ -1,0 +1,24 @@
+# Data is taken from the Danish energy agency
+
+
+S-DAC:
+  heat_demand: 1.494 #MWh/ton CO2, range 7.2-9.5 GJ/ton CO2
+  electricity_demand: 0.8 #MWh/ton CO2
+  electricity_demand_for_compression_only: 0.11 #MWh/ton CO2
+  regeneration_temperature: 80 #°C, range 60-100°C
+  capture_efficiency: 0.88315 #range 0.8 - 0.9663
+  land_area_sdac: 1.45 #m2/ton CO2, range 1.2-1.7 m2/ton CO2
+  land_area_heat_source: 1.5 #m2/ton CO2, additionally if geothermal heat or natural gas from the grid is used
+  capex: 140.735 #$/ton CO2, range 76.07 - 205.4
+  opex: 21.82 #$/ton CO2, range 11.4 - 32.24, only maintenance costs, costs for energy and compression are excluded
+
+L-DAC:
+  heat_demand: 1.986 #MWh/ton CO2
+  electricity_demand: 2.3 #MWh/ton CO2
+  electricity_demand_for_compression_only: 0.11 #MWh/ton CO2
+  regeneration_temperature: 900 #°C
+  land_area_ldac: 0.4 #m2/ton CO2
+  land_area_heat_source: 1.5 #m2/ton CO2, additionally if natural gas from the grid is used
+
+CHP-biomass:
+  
