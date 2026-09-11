@@ -1,3 +1,5 @@
+""" Carbon management exaple from pypsa"""
+
 import matplotlib.pyplot as plt
 import pypsa
 

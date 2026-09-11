@@ -20,5 +20,9 @@ L-DAC:
   land_area_ldac: 0.4 #m2/ton CO2
   land_area_heat_source: 1.5 #m2/ton CO2, additionally if natural gas from the grid is used
 
-CHP-biomass:
-  
+CHP-biomass: #Data sheets Wood Chips CHP, large, 50/100 °C return/forward temperature
+  electric_eff: 0.27
+  thermal_eff: 0.54
+  capex: 3.6e6 #$/MWe, range 3.0e6 - 4.2e6
+  opex_fix: 11.758 #$/MWe/h, range 9.817 - 13.699
+  opex_variable: 4.25 #$/MWhe, range 3.3 - 5.2
