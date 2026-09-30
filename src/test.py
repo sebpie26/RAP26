@@ -32,10 +32,9 @@ n.add(
 n.add("Carrier", "co2", co2_emissions=-1)
 
 n.add("Bus", "co2 atmosphere", carrier="co2")
-n.add("Store", 
-      "co2 atmosphere", 
+n.add("Store", "co2 atmosphere", 
       e_nom=1000, 
-      e_min_pu=-1, #Full capacity can also be used to withdraw emissions
+      e_min_pu=-1, # Full capacity can also be used to withdraw emissions
       bus="co2 atmosphere")
 
 n.add("Bus", "co2 stored")
