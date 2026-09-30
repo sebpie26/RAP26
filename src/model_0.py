@@ -301,4 +301,4 @@ if __name__ == "__main__":
 
     model = conceptual_model(model_parameter)
     
-    model_optimization_and_plot(model, save_path)
+    model_optimization_and_plot(model, save_path, show_or_save="save")
