@@ -12,6 +12,12 @@ import pypsa
         - but also contains: loads for heat and electricity, heat vent
     - model_optimization_and_plot_1()
         - Contains constrains and the objective of the optimization and manages the saving or displaying of the figures
+
+    ToDo:
+    - Add DAC
+    - Change model parameters to realistic values
+    - Model components more realistically
+    - Develop a case study (distances, etc.)
     """
 
 
@@ -43,7 +49,7 @@ def conceptual_model(model_parameter, snapshots=24):
         marginal_cost=mp["biomass_mc"] #biomass price
         )
 
-    n.add("Generator", "biomass supply",
+    n.add("Generator", "solid biomass supply",
         bus="solid biomass dealer",
         carrier="solid biomass",
         p_nom_extendable=True,
@@ -61,6 +67,7 @@ def conceptual_model(model_parameter, snapshots=24):
         capital_cost=mp["co2_store_harbor_cc"],
         )
 
+    n.add("Carrier", "co2 stored offshore")
     n.add("Bus", "co2 stored offshore", carrier="co2 stored offshore")
     n.add("Store", "co2 stored offshore",
         e_nom=mp["offshore_storage_capacity"],
@@ -69,7 +76,7 @@ def conceptual_model(model_parameter, snapshots=24):
         )
 
 
-    # CHP+CCS plant, local storage
+    # chp+ccs plant, local storage
     n.add("Carrier", "electricity")
     n.add("Bus", "electricity", carrier="electricity")
     n.add("Carrier", "heat")
@@ -79,7 +86,7 @@ def conceptual_model(model_parameter, snapshots=24):
     #n.add("Carrier", "solid biomass chp feed")
     n.add("Bus", "solid biomass chp feed", carrier="solid biomass", unit="t_biomass")
 
-    n.add("Link", "CHP+CCS",
+    n.add("Link", "chp+ccs",
             bus0="solid biomass chp feed", bus1="electricity", bus2="heat", bus3="co2 atmosphere", bus4="co2 captured chp",
             efficiency=mp["chpccs_electric_eff"], efficiency2=mp["chpccs_thermal_eff"], efficiency3=mp["chpccs_co2_emissions"], efficiency4=mp["chpccs_co2_captured"],
             p_nom_extendable=True, capital_cost=mp["chpccs_cc"], marginal_cost=mp["chpccs_mc"]
@@ -90,6 +97,25 @@ def conceptual_model(model_parameter, snapshots=24):
         carrier="co2 captured chp",
         bus="co2 captured chp"
         )
+
+    # DAC, heat alternatively provided by a heatpump
+    n.add("Bus", "co2 captured dac", carrier="co2 captured dac", unit="t_co2")
+    n.add("Store", "co2 captured dac",
+        e_nom=np.inf,
+        carrier="co2 captured chp",
+        bus="co2 captured chp"
+        )
+    
+    n.add("Link", "dac",
+            bus0="co2 atmosphere", bus1="co2 captured dac", bus2="electricity", bus3="heat",
+            efficiency=mp["dac_capture_eff"], efficiency2=mp["dac_electricity_consum"], efficiency3=mp["dac_heat_consum"],
+            p_nom_extendable=True, captial_cost=mp["dac_cc"]
+            )
+    n.add("Link", "heat pump dac",
+          bus0="electricity", bus1="heat",
+          efficiency=mp["heat_pump_COP"],
+          p_nom_extendable=True, capital_cost=mp["heat_pump_cc"]
+          )
 
 
     # Loads
@@ -117,18 +143,25 @@ def conceptual_model(model_parameter, snapshots=24):
 
 
     # Land transport to harbor, assumed 1000km
-    n.add("Link", "co2 rail transport",
-        bus0="co2 captured chp", bus1="co2 captured", bus2="electricity",
-        efficiency=mp["co2_rail_t_eff"], efficiency2=mp["co2_rail_t_el_consum"],
-        p_nom_extendable=True, marginal_cost=mp["co2_rail_t_mc"]
-        )
+    for start in ["chp", "dac"]:
+        n.add("Link", f"co2 rail transport {start}",
+            bus0=f"co2 captured {start}", bus1="co2 captured", bus2="electricity",
+            efficiency=mp["co2_rail_t_eff"], efficiency2=mp["co2_rail_t_el_consum"],
+            p_nom_extendable=True, marginal_cost=mp["co2_rail_t_mc"]
+            )
 
-    n.add("Link", "co2 road transport",
-          bus0="co2 captured chp", bus1="co2 captured", bus2="co2 atmosphere",
-          efficiency=mp["co2_road_t_eff"], efficiency2=mp["co2_road_t_co2_emissions"],
-          p_nom_extendable=True, marginal_cost=mp["co2_road_t_mc"]
-          )
+        n.add("Link", f"co2 road transport {start}",
+            bus0=f"co2 captured {start}", bus1="co2 captured", bus2="co2 atmosphere",
+            efficiency=mp["co2_road_t_eff"], efficiency2=mp["co2_road_t_co2_emissions"],
+            p_nom_extendable=True, marginal_cost=mp["co2_road_t_mc"]
+            )
 
+        n.add("Link", f"co2 pipeline onshore transport {start}",
+                bus0=f"co2 captured {start}", bus1="co2 captured",
+                efficiency=mp["co2_pipeline_onshore_t_efficiency"],
+                p_nom_extendable=True, capital_cost=mp["co2_pipeline_onshore_t_cc"]
+                )
+    
 
     # Sea transport from harbor to offshore co2 storage, assumed 1000km
     n.add("Link", "co2 ship transport",
@@ -157,28 +190,68 @@ def conceptual_model(model_parameter, snapshots=24):
             p_nom_extendable=True, marginal_cost=mp["biomass_road_t_mc"]
             )
 
+
+    
+
     return n
 
 
 def model_optimization_and_plot(model, save_path, show_or_save="show"):
-
+    
     m = model
+    m.optimize.create_model()
 
-    #ToDo: Add constraint that requires the "co2 captured chp" store to be 0 in the last snapshot
-    #m.add_constraints()
+    # Constraint that all co2 stores but the offshore store must be empty in the last snapshot
+    stores_to_empty = ["co2 captured chp", "co2 captured dac", "co2 captured harbor"]
+    m.model.add_constraints(m.model.variables.Store_e.loc[m.snapshots[-1], stores_to_empty] == 0, name="final_snapshot_conshore_stores_empty")
 
-    status, condition = m.optimize()
+    # Constraint that DAC must remove at least 10 tons of co2 from the atmosphere in every snapshot
+    dac_capture = m.model.variables.Link_p.sel(name="dac") * m.links.at["dac", "efficiency"]
+    m.model.add_constraints(dac_capture >= 10, name="min_dac_capture_per_snapshot")
+
+    # Track the combined CO2 store state at each snapshot.
+    co2_store_names = ["co2 stored offshore", "co2 atmosphere"]
+    total_co2_emitted = m.model.add_variables(coords=[m.snapshots], dims=["snapshot"], name="total_co2_emitted")
+    m.model.add_constraints(total_co2_emitted == m.model.variables.Store_e.loc[:, co2_store_names].sum("name"),
+        name="define_total_co2_emitted")
+
+
+    status, condition = m.optimize.solve_model(solver_name="gurobi")
 
     if condition == "optimal":
-        stores_ax = m.stores_t.e.plot()
-        links_ax = m.links_t.p0.plot()
-        generators_ax = m.generators_t.p.plot()
-        if show_or_save == "show":
-            plt.show()
-        elif show_or_save == "save":
-            for name, ax in {"stores": stores_ax, "links": links_ax, "generators": generators_ax}.items():
-                ax.figure.savefig(f"{save_path}/{name}.png", dpi=300)
-        plt.close()
+        co2_stores = ["co2 atmosphere", "co2 captured harbor", "co2 stored offshore", "co2 captured chp", "co2 captured dac",]
+        co2_stores_ax = plt.figure().add_subplot()
+        m.stores_t.e[co2_stores].plot(ax=co2_stores_ax)
+        m.model.variables["total_co2_emitted"].solution.to_pandas().plot(ax=co2_stores_ax, label="total co2 emitted")
+
+        co2_transport_links = [link for link in m.links_t.p0 if "co2" in link and "transport" in link]
+        co2_transport_links_ax = m.links_t.p0[co2_transport_links].plot()
+
+        co2_sources_ax = plt.figure().add_subplot()
+        m.links_t.p4["chp+ccs"].plot(ax=co2_sources_ax, label="chp with ccs")
+        m.links_t.p1["dac"].plot(ax=co2_sources_ax, label="dac")
+
+        #generators_ax = m.generators_t.p.plot()
+
+
+    plot_dict = {"co2_stores": co2_stores_ax,
+                 "co2_transport_links": co2_transport_links_ax,
+                 "co2_sources": co2_sources_ax}
+
+    for name, ax in plot_dict.items():
+        ax.set(
+            title=name.replace("_", " "),
+            ylabel="ton co2",
+            xlabel="hours")
+        ax.grid(True)
+        ax.legend()
+
+    if show_or_save == "show":
+        plt.show()
+    elif show_or_save == "save":
+        for name, ax in plot_dict.items():
+            ax.figure.savefig(f"{save_path}/{name}.png", dpi=300)
+        
     else:
         print(f"Optimization failed: {status}, {condition}")
 
@@ -199,7 +272,7 @@ if __name__ == "__main__":
         "co2_store_harbor_cc": 1000,  # €/t_co2 capacity
         "chpccs_electric_eff": 0.35, #MWh_el / MWh_biomass
         "chpccs_thermal_eff": 0.5, #MWh_th / MWh_biomass
-        "chpccs_co2_emissions": 0.0345, #t_co2 / MWh_biomass
+        "chpccs_co2_emissions": -0.161, # 0.0345 - 0.1955 t_co2 / MWh_biomass
         "chpccs_co2_captured": 0.1955, #t_co2 / MWh_biomass
         "chpccs_cc": 10000, #€/MW_biomass
         "chpccs_mc": 300, #€/MWh_biomass
@@ -220,6 +293,14 @@ if __name__ == "__main__":
         "biomass_road_t_eff": 1, #No losses during transport
         "biomass_road_t_co2_emissions": 0.008, #t_co2 emitted / t_biomass transported, 100km assumed
         "biomass_road_t_mc": 150, # €/t_biomass transported, 100km of transport assumed
+        "co2_pipeline_onshore_t_efficiency": 1, #No losses during transport
+        "co2_pipeline_onshore_t_cc": 2000000, #€, 1000km of transport assumed
+        "dac_capture_eff": 1, # Not captured co2 is immediatly released to the atmosphere
+        "dac_electricity_consum": -0.35, # MWh_el / ton_co2 captured
+        "dac_heat_consum": -2, # MWh_th / ton_co2 captured
+        "dac_cc": 8, #€/ ton_co2 captured
+        "heat_pump_COP": 3, #coefficient of performance
+        "heat_pump_cc": 200000, #€ / MWh_el consumed
     }
 
     model = conceptual_model(model_parameter)
