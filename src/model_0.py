@@ -14,7 +14,6 @@ import pypsa
         - Contains constrains and the objective of the optimization and manages the saving or displaying of the figures
 
     ToDo:
-    - Add DAC
     - Change model parameters to realistic values
     - Model components more realistically
     - Develop a case study (distances, etc.)
@@ -190,9 +189,6 @@ def conceptual_model(model_parameter, snapshots=24):
             p_nom_extendable=True, marginal_cost=mp["biomass_road_t_mc"]
             )
 
-
-    
-
     return n
 
 
@@ -218,6 +214,7 @@ def model_optimization_and_plot(model, save_path, show_or_save="show"):
 
     status, condition = m.optimize.solve_model(solver_name="gurobi")
 
+
     if condition == "optimal":
         co2_stores = ["co2 atmosphere", "co2 captured harbor", "co2 stored offshore", "co2 captured chp", "co2 captured dac",]
         co2_stores_ax = plt.figure().add_subplot()
@@ -233,24 +230,23 @@ def model_optimization_and_plot(model, save_path, show_or_save="show"):
 
         #generators_ax = m.generators_t.p.plot()
 
+        plot_dict = {"co2_stores": co2_stores_ax,
+                    "co2_transport_links": co2_transport_links_ax,
+                    "co2_sources": co2_sources_ax}
 
-    plot_dict = {"co2_stores": co2_stores_ax,
-                 "co2_transport_links": co2_transport_links_ax,
-                 "co2_sources": co2_sources_ax}
-
-    for name, ax in plot_dict.items():
-        ax.set(
-            title=name.replace("_", " "),
-            ylabel="ton co2",
-            xlabel="hours")
-        ax.grid(True)
-        ax.legend()
-
-    if show_or_save == "show":
-        plt.show()
-    elif show_or_save == "save":
         for name, ax in plot_dict.items():
-            ax.figure.savefig(f"{save_path}/{name}.png", dpi=300)
+            ax.set(
+                title=name.replace("_", " "),
+                ylabel="ton co2",
+                xlabel="hours")
+            ax.grid(True)
+            ax.legend()
+
+        if show_or_save == "show":
+            plt.show()
+        elif show_or_save == "save":
+            for name, ax in plot_dict.items():
+                ax.figure.savefig(f"{save_path}/{name}.png", dpi=300)
         
     else:
         print(f"Optimization failed: {status}, {condition}")
